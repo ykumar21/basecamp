@@ -5,6 +5,36 @@
 use std::io;
 use std::ptr::null;
 use std::collections::HashMap;
+use std::io::Write;
+use colored::*;
+
+// Struct to model the behaviour of the CLI application
+struct ConsoleCLI;
+
+impl ConsoleCLI {
+    fn print_line(line: &str) {
+        print!("{}", line);
+        io::stdout().flush()
+            .expect("Error: Fallback (TODO)");;
+    }
+
+    fn print_new_line() {
+        println!();
+    }
+
+    async fn load(loading_text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        ConsoleCLI::print_line(loading_text);
+        for _ in 1..10 {
+            // Model some delay
+            for _t in 1..10000000 {
+                // Do nothing :P
+            }
+            ConsoleCLI::print_line(".");
+        }
+        ConsoleCLI::print_new_line();
+        return Ok(());
+    }
+}
 
 // Wrapper class to handle HTTP requests
 struct HttpClient {
@@ -73,13 +103,15 @@ impl User {
 
     pub async fn authenticate(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
         // Read the username from the user
-        println!("Enter your username: ");
+        ConsoleCLI::print_line("Enter your username: ");
+
         io::stdin().read_line(&mut self.username)
             .expect("Error reading username");
         self.username = self.username.trim().parse().unwrap();
 
         // Read the password from the user
-        println!("Enter your password");
+        ConsoleCLI::print_line("Enter your password: ");
+
         io::stdin().read_line(&mut self.password)
             .expect("Error reading password");
         self.password = self.password.trim().parse().unwrap();
@@ -95,6 +127,7 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ConsoleCLI::load("Initializing").await?;
     let mut user = User::new();
 
     let authenticated = user.authenticate().await?;
