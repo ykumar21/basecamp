@@ -7,6 +7,8 @@ use std::ptr::null;
 use std::collections::HashMap;
 use std::io::Write;
 use colored::*;
+use std::thread;
+use std::thread::JoinHandle;
 
 // Struct to model the behaviour of the CLI application
 struct ConsoleCLI;
@@ -22,17 +24,28 @@ impl ConsoleCLI {
         println!();
     }
 
-    async fn load(loading_text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        ConsoleCLI::print_line(loading_text);
-        for _ in 1..10 {
-            // Model some delay
-            for _t in 1..10000000 {
-                // Do nothing :P
+    fn delete_prev_line() {
+        ConsoleCLI::print_line("\r");
+    }
+
+    fn load(loading_text:  &'static str) -> JoinHandle<()> {
+        return thread::spawn(move || {
+            ConsoleCLI::print_line(loading_text);
+            for i in 1..13 {
+                ConsoleCLI::print_line(".");
+                if i % 4 == 0 {
+                    ConsoleCLI::print_line("\x08\x08\x08\x08");
+                    ConsoleCLI::print_line("    ");
+                    ConsoleCLI::print_line("\x08\x08\x08\x08");
+                }
+
+                // Model some delay
+                for _t in 1..10000000 {
+                    // Do nothing :P
+                }
             }
-            ConsoleCLI::print_line(".");
-        }
-        ConsoleCLI::print_new_line();
-        return Ok(());
+            ConsoleCLI::delete_prev_line();
+        });
     }
 }
 
@@ -86,8 +99,6 @@ impl User {
             .json::<HashMap<String, String>>()
             .await?;
 
-        println!("{:#?}", response);
-
         if response.contains_key("token") {
             match response.get("token") {
                 Some(v) => {
@@ -127,7 +138,9 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ConsoleCLI::load("Initializing").await?;
+    let load_thread = ConsoleCLI::load("Initializing");
+    load_thread.join();
+
     let mut user = User::new();
 
     let authenticated = user.authenticate().await?;
