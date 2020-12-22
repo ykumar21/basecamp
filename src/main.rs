@@ -3,10 +3,8 @@
 #[allow(non_snake_case)]
 
 use std::io;
-use std::ptr::null;
 use std::collections::HashMap;
 use std::io::Write;
-use colored::*;
 use std::thread;
 use std::thread::JoinHandle;
 use std::sync::mpsc::{self, TryRecvError, Sender, Receiver};
@@ -42,10 +40,7 @@ impl ConsoleCLI {
                     ConsoleCLI::print_line("\x08\x08\x08\x08");
                 }
 
-                // Model some delay
-                for _t in 1..10000000 {
-                    // Do nothing :P
-                }
+                thread::sleep(std::time::Duration::from_millis(280));
 
                 match rx.try_recv() {
                     Ok(_) | Err(TryRecvError::Disconnected) => {
@@ -55,9 +50,9 @@ impl ConsoleCLI {
                 }
             }
         });
-
         return tx;
     }
+
 }
 
 // Wrapper class to handle HTTP requests
@@ -141,15 +136,15 @@ impl User {
         let tx = ConsoleCLI::load("Authenticating");
 
         let authenticated = self.validate().await?;
-        // Exit the loading thread
+        // Terminate the loading thread
         let _ = tx.send(true);
         ConsoleCLI::delete_prev_line();
 
         // Validate the credentials`
-        if authenticated {
-            return Ok(true);
+        return if authenticated {
+            Ok(true)
         } else {
-            return Ok(false);
+            Ok(false)
         }
     }
 }
