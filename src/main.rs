@@ -9,6 +9,7 @@ use std::io::Write;
 use colored::*;
 use std::thread;
 use std::thread::JoinHandle;
+use std::sync::mpsc::{self, TryRecvError, Sender, Receiver};
 
 // Struct to model the behaviour of the CLI application
 struct ConsoleCLI;
@@ -28,10 +29,12 @@ impl ConsoleCLI {
         ConsoleCLI::print_line("\r");
     }
 
-    fn load(loading_text:  &'static str) -> JoinHandle<()> {
-        return thread::spawn(move || {
+    fn load(loading_text:  &'static str) -> Sender<bool> {
+         let (tx, rx): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+         thread::spawn(move || {
             ConsoleCLI::print_line(loading_text);
-            for i in 1..13 {
+            let mut i : u8 = 1;
+            loop {
                 ConsoleCLI::print_line(".");
                 if i % 4 == 0 {
                     ConsoleCLI::print_line("\x08\x08\x08\x08");
@@ -43,9 +46,17 @@ impl ConsoleCLI {
                 for _t in 1..10000000 {
                     // Do nothing :P
                 }
+
+                match rx.try_recv() {
+                    Ok(_) | Err(TryRecvError::Disconnected) => {
+                        break;
+                    },
+                    Err(TryRecvError::Empty) => {}
+                }
             }
-            ConsoleCLI::delete_prev_line();
         });
+
+        return tx;
     }
 }
 
@@ -127,8 +138,15 @@ impl User {
             .expect("Error reading password");
         self.password = self.password.trim().parse().unwrap();
 
-        // Validate the credentials
-        if self.validate().await? {
+        let tx = ConsoleCLI::load("Authenticating");
+
+        let authenticated = self.validate().await?;
+        // Exit the loading thread
+        let _ = tx.send(true);
+        ConsoleCLI::delete_prev_line();
+
+        // Validate the credentials`
+        if authenticated {
             return Ok(true);
         } else {
             return Ok(false);
@@ -138,9 +156,6 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let load_thread = ConsoleCLI::load("Initializing");
-    load_thread.join();
-
     let mut user = User::new();
 
     let authenticated = user.authenticate().await?;
