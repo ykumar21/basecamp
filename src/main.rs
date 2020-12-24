@@ -1,3 +1,5 @@
+mod thread_pool;
+
 #[allow(dead_code)]
 #[allow(unused_variables)]
 #[allow(non_snake_case)]
@@ -12,17 +14,19 @@ use std::net::TcpStream;
 use std::ptr::null;
 use std::error::Error;
 use ssh2::Session;
-use pem::parse;
 use std::path::Path;
+use futures::executor::block_on;
+use threadpool::ThreadPool;
 
 // Struct to model the behaviour of the CLI application
 struct ConsoleCLI;
 
 impl ConsoleCLI {
-    fn print_line(line: &str) {
+    fn print_line<T>(line: &T)
+    where T : std::fmt::Display + ?Sized {
         print!("{}", line);
         io::stdout().flush()
-            .expect("Error: Fallback (TODO)");;
+            .expect("Error: Fallback (TODO)");
     }
 
     fn print_new_line() {
@@ -54,6 +58,8 @@ impl ConsoleCLI {
                     },
                     Err(TryRecvError::Empty) => {}
                 }
+
+                i+=1;
             }
         });
         return tx;
@@ -71,32 +77,24 @@ impl Server {
         };
     }
 
-    async fn connect(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
-        let tx = ConsoleCLI::load("Connecting to remote SSH server");
-
+    async fn connect(&self) -> Result<bool, Box<dyn std::error::Error>> {
         // Connect to the remote SSH server
-        let tcp_stream = TcpStream::connect("REMOTE_SERVER").unwrap();
+        let tcp_stream = TcpStream::connect("ec2-15-206-94-33.ap-south-1.compute.amazonaws.com:22").unwrap();
         let mut sess = Session::new().unwrap();
         sess.set_tcp_stream(tcp_stream);
         sess.handshake().unwrap();
 
         // Authenticate the user using PEM file
-        sess.userauth_pubkey_file("ubuntu", Option::None, Path::new("PRIVATE_KEY"), Option::None).unwrap();
-
-        // Terminate the loading screen thread
-        let _ = tx.send(true);
-        ConsoleCLI::delete_prev_line();
-        ConsoleCLI::print_line("Connected to remote server!");
-
+        sess.userauth_pubkey_file("ubuntu", Option::None, Path::new("C:/Users/Nityam/Downloads/test-new.pem"), Option::None).unwrap();
 
         let mut channel = sess.channel_session().unwrap();
         channel.exec("ls").unwrap();
         let mut s = String::new();
         channel.read_to_string(&mut s).unwrap();
+        ConsoleCLI::print_new_line();
         println!("{}", s);
 
         channel.wait_close().unwrap();
-        println!("{}", channel.exit_status().unwrap());111
         return Ok(true);
     }
 }
@@ -207,11 +205,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Error logging in!");
     }
 
-    let mut server = Server::new();
-    let connection = server.connect().await?;
-    if connection {
-        ConsoleCLI::print_line("Connected to server!");
+    let tx = ConsoleCLI::load("Connecting to remote SSH server");
+
+    // Configuration for the thread pool
+    const NUM_WORKERS: usize = 4;
+    const NUM_JOBS: usize = 10;
+
+    // Create a thread pool to run the SSH jobs in parallel
+    let pool = ThreadPool::new(NUM_WORKERS);
+
+    // Execute the jobs using worker threads
+    for i in 0..NUM_JOBS {
+        pool.execute( move || {
+            // Connect to the server and execute the SSH job
+            let server = Server::new();
+            let f = server.connect();
+            block_on(f).unwrap();
+            ConsoleCLI::print_line(&format!("Completed job {}\n", i));
+        });
     }
+
+    // Make a blocking call to wait for all the jobs to be
+    // completed
+    pool.join();
+
+    // Terminate the loading screen thread
+    let _ = tx.send(true);
+    ConsoleCLI::delete_prev_line();
+    ConsoleCLI::print_line("Finished Jobs!");
 
     return Ok(());
 }
