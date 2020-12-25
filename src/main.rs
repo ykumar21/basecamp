@@ -80,7 +80,18 @@ impl Server {
         };
     }
 
-    async fn connect(&self) -> Result<bool, Box<dyn std::error::Error>> {
+    /// Method to connect (SSH) to a remote server using PEM encoded key asynchronously
+    ///
+    /// # Examples
+    /// ```no_run
+    /// let server = Server::new();
+    /// let connected = server.connect().await?;
+    ///
+    /// if connected {
+    ///     println!("Connected to server!");
+    /// }
+    /// ```
+    async fn connect(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
         // Connect to the remote SSH server
         let tcp_stream = TcpStream::connect("ec2-15-206-94-33.ap-south-1.compute.amazonaws.com:22").unwrap();
         let mut sess = Session::new().unwrap();
@@ -90,16 +101,43 @@ impl Server {
         // Authenticate the user using PEM file
         sess.userauth_pubkey_file("ubuntu", Option::None, Path::new("C:/Users/Nityam/Downloads/test-new.pem"), Option::None).unwrap();
 
-        let mut channel = sess.channel_session().unwrap();
-        channel.exec("ls").unwrap();
+        self.session = Some(sess);
+        return Ok(true);
+    }
+
+    /// Method to execute a SSH job on the remote server asynchronously
+    ///
+    /// # Examples
+    /// ```no_run
+    /// let server = Server::new();
+    /// let _ = server.connect().await?;
+    /// let res = server.execute("ls").await?;
+    /// ```
+    async fn execute(&self, job: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        let session = match &self.session {
+            Some(sess) => sess,
+            None => {
+                panic!("Session not initialized!")
+            }
+        };
+
+        // Create a new channel
+        let mut channel = session.channel_session().unwrap();
+        // Execute the job on the server
+        channel.exec(job).unwrap();
+
+        // Get the output of the job and display
         let mut s = String::new();
         channel.read_to_string(&mut s).unwrap();
         ConsoleCLI::print_new_line();
-        // println!("{}", s);
+        println!("{}", s);
 
+        // Close the channel
         channel.wait_close().unwrap();
         return Ok(true);
     }
+
+
 }
 
 /// Wrapper class to handle HTTP requests
@@ -211,7 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Configuration for the thread pool
     const NUM_WORKERS: usize = 1;
-    const NUM_JOBS: usize = 10;
+    const NUM_JOBS: usize = 1;
 
     // Show the loading text
     let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
@@ -227,9 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..NUM_JOBS {
         pool.execute( move || {
             // Connect to the server and execute the SSH job
-            let server = Server::new();
-            let f = server.connect();
-            block_on(f).unwrap();
+            let mut server = Server::new();
+            block_on(server.connect()).unwrap();
+            let res = block_on(server.execute("touch new.txt; echo 'This is a file created by rust!' > new.txt; cat new.txt;")).unwrap();
             ConsoleCLI::print_line(format!("Completed job {}\n", i));
         });
     }
