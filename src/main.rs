@@ -1,4 +1,5 @@
 mod thread_pool;
+mod timer;
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
@@ -17,14 +18,15 @@ use ssh2::Session;
 use std::path::Path;
 use futures::executor::block_on;
 use threadpool::ThreadPool;
+use crate::timer::Timer;
 
 // Struct to model the behaviour of the CLI application
 struct ConsoleCLI;
 
 impl ConsoleCLI {
-    fn print_line<T>(line: &T)
-    where T : std::fmt::Display + ?Sized {
-        print!("{}", line);
+    fn print_line<T>(line: T)
+    where T : std::fmt::Display {
+        print!("{}", &line);
         io::stdout().flush()
             .expect("Error: Fallback (TODO)");
     }
@@ -37,10 +39,11 @@ impl ConsoleCLI {
         ConsoleCLI::print_line("\r");
     }
 
-    fn load(loading_text:  &'static str) -> Sender<bool> {
-         let (tx, rx): (Sender<bool>, Receiver<bool>) = mpsc::channel();
-         thread::spawn(move || {
-            ConsoleCLI::print_line(loading_text);
+    fn load<T>(loading_text:  T) -> Sender<bool>
+    where T : std::fmt::Display {
+        let (tx, rx): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+        ConsoleCLI::print_line(&loading_text);
+        thread::spawn(move || {
             let mut i : u8 = 1;
             loop {
                 ConsoleCLI::print_line(".");
@@ -92,14 +95,14 @@ impl Server {
         let mut s = String::new();
         channel.read_to_string(&mut s).unwrap();
         ConsoleCLI::print_new_line();
-        println!("{}", s);
+        // println!("{}", s);
 
         channel.wait_close().unwrap();
         return Ok(true);
     }
 }
 
-// Wrapper class to handle HTTP requests
+/// Wrapper class to handle HTTP requests
 struct HttpClient {
     hostname: String
 }
@@ -112,7 +115,7 @@ impl HttpClient {
     }
 
     pub async fn get(&self, url: String) -> Result<String, Box<dyn std::error::Error>> {
-        todo!();
+        todo!()
     }
 }
 
@@ -205,14 +208,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Error logging in!");
     }
 
-    let tx = ConsoleCLI::load("Connecting to remote SSH server");
 
     // Configuration for the thread pool
-    const NUM_WORKERS: usize = 4;
+    const NUM_WORKERS: usize = 1;
     const NUM_JOBS: usize = 10;
+
+    // Show the loading text
+    let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
 
     // Create a thread pool to run the SSH jobs in parallel
     let pool = ThreadPool::new(NUM_WORKERS);
+
+    // Start the timer to time the duration for all the jobs
+    // to be completed
+    let timer = Timer::new();
 
     // Execute the jobs using worker threads
     for i in 0..NUM_JOBS {
@@ -221,7 +230,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let server = Server::new();
             let f = server.connect();
             block_on(f).unwrap();
-            ConsoleCLI::print_line(&format!("Completed job {}\n", i));
+            ConsoleCLI::print_line(format!("Completed job {}\n", i));
         });
     }
 
@@ -232,7 +241,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Terminate the loading screen thread
     let _ = tx.send(true);
     ConsoleCLI::delete_prev_line();
-    ConsoleCLI::print_line("Finished Jobs!");
+    ConsoleCLI::print_line(format!("Finished Jobs in {}s", timer.ellapsed().as_secs()));
+    drop(timer);
 
     return Ok(());
 }
