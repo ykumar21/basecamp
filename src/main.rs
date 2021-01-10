@@ -5,6 +5,7 @@ mod job;
 #[allow(unused_variables)]
 #[allow(non_snake_case)]
 
+use std::sync::{Arc,Mutex};
 use std::io;
 use std::collections::HashMap;
 use std::io::{Write, Read};
@@ -18,7 +19,7 @@ use ssh2::Session;
 use std::path::Path;
 use futures::executor::block_on;
 use threadpool::ThreadPool;
-use cli_table::{format::Justify, print_stdout, Cell, Style, Table, print_stderr};
+use cli_table::{format::Justify, print_stdout, Cell, Style, Table, print_stderr, CellStruct};
 use crate::timer::Timer;
 use crate::job::Job;
 
@@ -75,24 +76,23 @@ impl ConsoleCLI {
         return tx;
     }
 
-    fn display_table<T>(data : Vec<T>)
+    fn display_table<T>(data: &Vec<T>)
     where T : std::fmt::Display {
         let num_rows = data.len();
+        let mut table: Vec<Vec<CellStruct>>= Vec::with_capacity(num_rows);
+        for (i, v) in data.iter().enumerate() {
+            let row  = vec![i.cell().justify(Justify::Right), v.cell().justify(Justify::Right)];
+            table.push(row);
+        }
 
-        let table = vec![
-            vec!["Job 1".cell(), 1.cell().justify(Justify::Right)],
-            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
-            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
-            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
-            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)]
-        ]   .table()
+        let tableStruct = table.table()
             .title(vec![
-                "Name".cell().bold(true),
-                "Age".cell().bold(true)
+                "Job #".cell().bold(true),
+                "Result".cell().bold(true)
             ])
             .bold(true);
 
-        print_stdout(table);
+        print_stdout(tableStruct);
     }
 }
 
@@ -140,7 +140,7 @@ impl Server {
     /// let _ = server.connect().await?;
     /// let res = server.execute("ls").await?;
     /// ```
-    async fn execute(&self, job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
+    async fn execute(&self, job: &Job) -> Result<String, Box<dyn std::error::Error>> {
         let session = match &self.session {
             Some(sess) => sess,
             None => {
@@ -153,14 +153,9 @@ impl Server {
 
         let output = job.execute(&mut channel).await?;
 
-        ConsoleCLI::print_new_line();
-        ConsoleCLI::print_line("------ OUTPUT ---------\n");
-        println!("{}", output);
-        ConsoleCLI::print_line("------ END OF OUTPUT ---------\n");
-
         // Close the channel
         channel.wait_close().unwrap();
-        return Ok(true);
+        return Ok(output);
     }
 
 
@@ -262,7 +257,6 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ConsoleCLI::display_table();
     let mut user = User::new();
 
     // Authenticate the user
@@ -274,10 +268,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Configuration for the thread pool
     const NUM_WORKERS: usize = 5;
-
     // Create the jobs
     const NUM_JOBS: usize = 5;
-    let mut task_list: Vec<String> = Vec::with_capacity(5);
+
+    // Holds the tasks entered by the user
+    let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
+    // Holds the results of the jobs
+    let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
 
     // Receive the tasks from the user
     for _ in 0..NUM_JOBS {
@@ -299,19 +296,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute the jobs using worker threads
     for i in 0..NUM_JOBS {
+        // Get the task for the current job
         let job_task= task_list[i].clone();
+        // Make a clone of the results
+        let clone = Arc::clone(&job_results);
         pool.execute( move || {
-            // Create a timer for the job
-            let job_timer = Timer::new();
+            // Get the vector storing the results
+            let mut result_vec = clone.lock().unwrap();
             // Connect to the server and execute the SSH job
             let mut server = Server::new();
             block_on(server.connect()).unwrap();
 
             // Create the new job for the worker thread
+            // and execute the job
             let job = Job::new(job_task);
-
             let res = block_on(server.execute(&job)).unwrap();
-            ConsoleCLI::print_line(format!("Completed job {} in {}s\n", i, job_timer.ellapsed().as_secs()));
+            result_vec.push(String::from(res));
         });
     }
 
@@ -322,8 +322,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Terminate the loading screen thread
     let _ = tx.send(true);
     ConsoleCLI::delete_prev_line();
-    ConsoleCLI::print_line(format!("Finished Jobs in {}s", timer.ellapsed().as_secs()));
+    ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
     drop(timer);
 
+    // Display the results in the table
+    ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
+    drop(job_results);
     return Ok(());
 }
