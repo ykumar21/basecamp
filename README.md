@@ -1,4 +1,4 @@
-# rust-cli
+# basecamp
 
 An CLI application made using rust to run shell commands on a remote server directly!
 
