@@ -1,5 +1,5 @@
-mod thread_pool;
 mod timer;
+mod job;
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
@@ -18,12 +18,20 @@ use ssh2::Session;
 use std::path::Path;
 use futures::executor::block_on;
 use threadpool::ThreadPool;
+use cli_table::{format::Justify, print_stdout, Cell, Style, Table, print_stderr};
 use crate::timer::Timer;
+use crate::job::Job;
 
-// Struct to model the behaviour of the CLI application
 struct ConsoleCLI;
 
 impl ConsoleCLI {
+    /// Method to print some text to the Console
+    ///
+    /// # Examples
+    /// ```no_run
+    /// ConsoleCLI::print_line("Hey there");
+    /// ConsoleCLI::print_line( String::from( "You can use strings as well!" ) );
+    /// ```
     fn print_line<T>(line: T)
     where T : std::fmt::Display {
         print!("{}", &line);
@@ -61,11 +69,30 @@ impl ConsoleCLI {
                     },
                     Err(TryRecvError::Empty) => {}
                 }
-
                 i+=1;
             }
         });
         return tx;
+    }
+
+    fn display_table<T>(data : Vec<T>)
+    where T : std::fmt::Display {
+        let num_rows = data.len();
+
+        let table = vec![
+            vec!["Job 1".cell(), 1.cell().justify(Justify::Right)],
+            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
+            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
+            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)],
+            vec!["Job 2".cell(), 2.cell().justify(Justify::Right)]
+        ]   .table()
+            .title(vec![
+                "Name".cell().bold(true),
+                "Age".cell().bold(true)
+            ])
+            .bold(true);
+
+        print_stdout(table);
     }
 }
 
@@ -99,7 +126,7 @@ impl Server {
         sess.handshake().unwrap();
 
         // Authenticate the user using PEM file
-        sess.userauth_pubkey_file("ubuntu", Option::None, Path::new("C:/Users/Nityam/Downloads/test-new.pem"), Option::None).unwrap();
+        sess.userauth_pubkey_file("ubuntu", Option::None, Path::new("C:/Users/Yash/Downloads/test-new.pem"), Option::None).unwrap();
 
         self.session = Some(sess);
         return Ok(true);
@@ -113,24 +140,23 @@ impl Server {
     /// let _ = server.connect().await?;
     /// let res = server.execute("ls").await?;
     /// ```
-    async fn execute(&self, job: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    async fn execute(&self, job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
         let session = match &self.session {
             Some(sess) => sess,
             None => {
                 panic!("Session not initialized!")
             }
         };
-
         // Create a new channel
         let mut channel = session.channel_session().unwrap();
-        // Execute the job on the server
-        channel.exec(job).unwrap();
+        // Execute the job on the server and get the output
 
-        // Get the output of the job and display
-        let mut s = String::new();
-        channel.read_to_string(&mut s).unwrap();
+        let output = job.execute(&mut channel).await?;
+
         ConsoleCLI::print_new_line();
-        println!("{}", s);
+        ConsoleCLI::print_line("------ OUTPUT ---------\n");
+        println!("{}", output);
+        ConsoleCLI::print_line("------ END OF OUTPUT ---------\n");
 
         // Close the channel
         channel.wait_close().unwrap();
@@ -236,6 +262,7 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ConsoleCLI::display_table();
     let mut user = User::new();
 
     // Authenticate the user
@@ -245,15 +272,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("Error logging in!");
     }
-
-
     // Configuration for the thread pool
-    const NUM_WORKERS: usize = 1;
-    const NUM_JOBS: usize = 1;
+    const NUM_WORKERS: usize = 5;
+
+    // Create the jobs
+    const NUM_JOBS: usize = 5;
+    let mut task_list: Vec<String> = Vec::with_capacity(5);
+
+    // Receive the tasks from the user
+    for _ in 0..NUM_JOBS {
+        let mut job_task = String::new();
+        io::stdin().read_line(&mut job_task)
+            .expect("Failed to read job");
+        job_task = job_task.parse().expect("Failed to parse job!");
+        task_list.push(job_task);
+    }
 
     // Show the loading text
     let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
-
     // Create a thread pool to run the SSH jobs in parallel
     let pool = ThreadPool::new(NUM_WORKERS);
 
@@ -263,12 +299,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute the jobs using worker threads
     for i in 0..NUM_JOBS {
+        let job_task= task_list[i].clone();
         pool.execute( move || {
+            // Create a timer for the job
+            let job_timer = Timer::new();
             // Connect to the server and execute the SSH job
             let mut server = Server::new();
             block_on(server.connect()).unwrap();
-            let res = block_on(server.execute("touch new.txt; echo 'This is a file created by rust!' > new.txt; cat new.txt;")).unwrap();
-            ConsoleCLI::print_line(format!("Completed job {}\n", i));
+
+            // Create the new job for the worker thread
+            let job = Job::new(job_task);
+
+            let res = block_on(server.execute(&job)).unwrap();
+            ConsoleCLI::print_line(format!("Completed job {} in {}s\n", i, job_timer.ellapsed().as_secs()));
         });
     }
 
