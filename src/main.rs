@@ -1,27 +1,28 @@
+#![allow(warnings)]
 mod timer;
 mod job;
 
-#[allow(dead_code)]
-#[allow(unused_variables)]
-#[allow(non_snake_case)]
-
 use std::sync::{Arc,Mutex};
-use std::io;
+use std::io::{self, Write};
 use std::collections::HashMap;
-use std::io::{Write, Read};
 use std::thread;
-use std::thread::JoinHandle;
 use std::sync::mpsc::{self, TryRecvError, Sender, Receiver};
 use std::net::TcpStream;
-use std::ptr::null;
-use std::error::Error;
 use ssh2::Session;
 use std::path::Path;
 use futures::executor::block_on;
 use threadpool::ThreadPool;
-use cli_table::{format::Justify, print_stdout, Cell, Style, Table, print_stderr, CellStruct};
+use cli_table::{format::Justify, print_stdout, Style as TableStyle, Cell, Table, CellStruct};
+use tui::Terminal;
+use tui::backend::CrosstermBackend;
+use tui::widgets::{Widget, Block, Borders};
+use tui::layout::{Layout, Constraint, Direction};
+use tui::style::{Style, Color};
+
 use crate::timer::Timer;
 use crate::job::Job;
+use tui::text::Span;
+use tokio::time::Duration;
 
 struct ConsoleCLI;
 
@@ -257,6 +258,20 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a new terminal
+    let backend = CrosstermBackend::new( io::stdout() );
+    let mut terminal = Terminal::new(backend)?;
+
+    print!("\x1B[2J\x1B[1;1H");
+
+    terminal.draw(|f| {
+        let size = f.size();
+        let block = Block::default()
+            .title( Span::styled("Basecamp!", Style::default().fg(Color::Yellow)) )
+            .borders(Borders::ALL);
+        f.render_widget(block, size);
+    });
+
     let mut user = User::new();
 
     // Authenticate the user
