@@ -27,7 +27,7 @@ impl Job {
 
         // Read the output from the server
         let mut output = String::new();
-        channel.read_to_string(&mut output);
+        channel.read_to_string(&mut output).unwrap();
 
         // Return the output of the command
         return Ok(output);
