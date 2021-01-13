@@ -3,7 +3,7 @@ mod timer;
 mod job;
 
 use std::sync::{Arc,Mutex};
-use std::io::{self, Write};
+use std::io::{self, Write, stdout};
 use std::collections::HashMap;
 use std::thread;
 use std::sync::mpsc::{self, TryRecvError, Sender, Receiver};
@@ -15,18 +15,140 @@ use threadpool::ThreadPool;
 use cli_table::{format::Justify, print_stdout, Style as TableStyle, Cell, Table, CellStruct};
 use tui::Terminal;
 use tui::backend::CrosstermBackend;
-use tui::widgets::{Widget, Block, Borders};
-use tui::layout::{Layout, Constraint, Direction};
-use tui::style::{Style, Color};
+use tui::widgets::{Widget, Block, Borders, ListItem, Wrap, Paragraph};
+use tui::layout::{Layout, Constraint, Direction, Alignment};
+use tui::style::{Style, Color, Modifier};
+use crossterm::{execute, style::{SetBackgroundColor}, ExecutableCommand};
+use crossterm::event::{poll, read, Event};
 
 use crate::timer::Timer;
 use crate::job::Job;
-use tui::text::Span;
+use tui::text::{Span, Spans};
 use tokio::time::Duration;
 
-struct ConsoleCLI;
+struct ConsoleCLI {
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>
+}
 
 impl ConsoleCLI {
+
+    /// Method to construct a new cli with
+    /// the crossterm backend
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let stdout = io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+
+        return Ok(ConsoleCLI {
+            terminal
+        });
+    }
+
+    /// Method to initialize and display the UI
+    fn build_ui(&mut self) {
+        // Clear the screen
+        ConsoleCLI::clear();
+
+        // Change the background color to blue
+        stdout()
+            .execute(SetBackgroundColor(crossterm::style::Color::Blue));
+
+        self.terminal.draw(|f| {
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(50),
+                        Constraint::Percentage(50)
+                    ].as_ref()
+                )
+                .split(f.size());
+
+            // Render the output terminal
+            let text = vec![
+                Spans::from(vec![
+                    Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
+                ]),
+            ];
+            let output_term = Paragraph::new(text)
+                .block(Block::default().title(" OUTPUT ").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Left)
+                .wrap(tui::widgets::Wrap { trim: true });
+            f.render_widget(output_term, main_chunks[1]);
+
+            let mini_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(
+                    [
+                        Constraint::Percentage(40),
+                        Constraint::Percentage(40),
+                        Constraint::Percentage(20)
+                    ].as_ref()
+                )
+                .split(main_chunks[0]);
+
+            let tasks_panel = Block::default()
+                .title(
+                    Span::styled(" TASKS ", Style::default().fg(Color::White))
+                )
+                .borders(Borders::ALL);
+
+            // Render the task list
+            let tasks = [ListItem::new("Item 1"), ListItem::new("Item 2"), ListItem::new("Item 3")];
+            let task_list = tui::widgets::List::new(tasks)
+                .block(Block::default().title(" TASKS ").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+                .highlight_symbol(">>");
+
+            // Render the server list
+            let servers = [ListItem::new("Item 1"), ListItem::new("Item 2"), ListItem::new("Item 3")];
+            let server_list = tui::widgets::List::new(servers)
+                .block(Block::default().title(" SERVERS ").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+                .highlight_symbol(">>");
+
+            // Render the footer
+            let text = vec![
+                Spans::from(vec![
+                    Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
+                ]),
+            ];
+
+            let footer = tui::widgets::Paragraph::new(text)
+                .block(Block::default().title(" INFORMATION ").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .alignment(tui::layout::Alignment::Left)
+                .wrap(tui::widgets::Wrap { trim: true });
+
+            f.render_widget(server_list, mini_chunks[0]);
+            f.render_widget(task_list, mini_chunks[1]);
+            f.render_widget(footer, mini_chunks[2]);
+        });
+
+        // Spawn a new thread to listen and parse the events
+        thread::spawn(|| {
+            ConsoleCLI::parse_events();
+        });
+    }
+
+    /// Method to parse the events
+    fn parse_events() -> crossterm::Result<()> {
+        loop {
+            if poll(Duration::from_millis(500))? {
+                match read()? {
+                    Event::Key(event) => println!("{:?}", event),
+                    Event::Mouse(event) => println!("{:?}", event),
+                    Event::Resize(..) => println!("Resized!")
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
     /// Method to print some text to the Console
     ///
     /// # Examples
@@ -39,6 +161,12 @@ impl ConsoleCLI {
         print!("{}", &line);
         io::stdout().flush()
             .expect("Error: Fallback (TODO)");
+    }
+
+    /// Method to clear the terminal and places
+    /// the cursor at the top-left of the terminal
+    fn clear() {
+        print!("\x1B[2J\x1B[1;1H");
     }
 
     fn print_new_line() {
@@ -258,19 +386,9 @@ impl User {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create a new terminal
-    let backend = CrosstermBackend::new( io::stdout() );
-    let mut terminal = Terminal::new(backend)?;
 
-    print!("\x1B[2J\x1B[1;1H");
-
-    terminal.draw(|f| {
-        let size = f.size();
-        let block = Block::default()
-            .title( Span::styled("Basecamp!", Style::default().fg(Color::Yellow)) )
-            .borders(Borders::ALL);
-        f.render_widget(block, size);
-    });
+    let mut cli = ConsoleCLI::new().unwrap();
+    cli.build_ui();
 
     let mut user = User::new();
 
