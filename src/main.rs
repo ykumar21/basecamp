@@ -507,76 +507,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     cli_thread.join().unwrap();
 
-    // let mut user = User::new();
-    //
-    // // Authenticate the user
-    // let authenticated = user.authenticate().await?;
-    // if authenticated {
-    //     println!("You have been logged in!");
-    // } else {
-    //     println!("Error logging in!");
-    // }
-    // // Configuration for the thread pool
-    // const NUM_WORKERS: usize = 5;
-    // // Create the jobs
-    // const NUM_JOBS: usize = 5;
-    //
-    // // Holds the tasks entered by the user
-    // let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
-    // // Holds the results of the jobs
-    // let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
-    //
-    // // Receive the tasks from the user
-    // for _ in 0..NUM_JOBS {
-    //     let mut job_task = String::new();
-    //     io::stdin().read_line(&mut job_task)
-    //         .expect("Failed to read job");
-    //     job_task = job_task.parse().expect("Failed to parse job!");
-    //     task_list.push(job_task);
-    // }
-    //
-    // // Show the loading text
-    // let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
-    // // Create a thread pool to run the SSH jobs in parallel
-    // let pool = ThreadPool::new(NUM_WORKERS);
-    //
-    // // Start the timer to time the duration for all the jobs
-    // // to be completed
-    // let timer = Timer::new();
-    //
-    // // Execute the jobs using worker threads
-    // for i in 0..NUM_JOBS {
-    //     // Get the task for the current job
-    //     let job_task= task_list[i].clone();
-    //     // Make a clone of the results
-    //     let clone = Arc::clone(&job_results);
-    //     pool.execute( move || {
-    //         // Get the vector storing the results
-    //         let mut result_vec = clone.lock().unwrap();
-    //         // Connect to the server and execute the SSH job
-    //         let mut server = Server::new();
-    //         block_on(server.connect()).unwrap();
-    //
-    //         // Create the new job for the worker thread
-    //         // and execute the job
-    //         let job = Job::new(job_task);
-    //         let res = block_on(server.execute(&job)).unwrap();
-    //         result_vec.push(String::from(res));
-    //     });
-    // }
-    //
-    // // Make a blocking call to wait for all the jobs to be
-    // // completed
-    // pool.join();
-    //
-    // // Terminate the loading screen thread
-    // let _ = tx.send(true);
-    // ConsoleCLI::delete_prev_line();
-    // ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
-    // drop(timer);
-    //
-    // // Display the results in the table
-    // ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
-    // drop(job_results);
+    let mut user = User::new();
+    // Authenticate the user
+    let authenticated = user.authenticate().await?;
+    if authenticated {
+        println!("You have been logged in!");
+    } else {
+        println!("Error logging in!");
+    }
+    // Configuration for the thread pool
+    const NUM_WORKERS: usize = 5;
+    // Create the jobs
+    const NUM_JOBS: usize = 5;
+
+    // Holds the tasks entered by the user
+    let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
+    // Holds the results of the jobs
+    let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
+
+    // Receive the tasks from the user
+    for _ in 0..NUM_JOBS {
+        let mut job_task = String::new();
+        io::stdin().read_line(&mut job_task)
+            .expect("Failed to read job");
+        job_task = job_task.parse().expect("Failed to parse job!");
+        task_list.push(job_task);
+    }
+
+    // Show the loading text
+    let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
+    // Create a thread pool to run the SSH jobs in parallel
+    let pool = ThreadPool::new(NUM_WORKERS);
+
+    // Start the timer to time the duration for all the jobs
+    // to be completed
+    let timer = Timer::new();
+
+    // Execute the jobs using worker threads
+    for i in 0..NUM_JOBS {
+        // Get the task for the current job
+        let job_task= task_list[i].clone();
+        // Make a clone of the results
+        let clone = Arc::clone(&job_results);
+        pool.execute( move || {
+            // Get the vector storing the results
+            let mut result_vec = clone.lock().unwrap();
+            // Connect to the server and execute the SSH job
+            let mut server = Server::new();
+            block_on(server.connect()).unwrap();
+
+            // Create the new job for the worker thread
+            // and execute the job
+            let job = Job::new(job_task);
+            let res = block_on(server.execute(&job)).unwrap();
+            result_vec.push(String::from(res));
+        });
+    }
+
+    // Make a blocking call to wait for all the jobs to be
+    // completed
+    pool.join();
+
+    // Terminate the loading screen thread
+    let _ = tx.send(true);
+    ConsoleCLI::delete_prev_line();
+    ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
+    drop(timer);
+
+    // Display the results in the table
+    ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
+    drop(job_results);
     return Ok(());
 }
