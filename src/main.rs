@@ -15,11 +15,11 @@ use threadpool::ThreadPool;
 use cli_table::{format::Justify, print_stdout, Style as TableStyle, Cell, Table, CellStruct};
 use tui::Terminal;
 use tui::backend::CrosstermBackend;
-use tui::widgets::{Widget, Block, Borders, ListItem, Wrap, Paragraph};
+use tui::widgets::{Widget, Block, Borders, ListItem, Wrap, Paragraph, ListState};
 use tui::layout::{Layout, Constraint, Direction, Alignment};
 use tui::style::{Style, Color, Modifier};
 use crossterm::{execute, style::{SetBackgroundColor}, ExecutableCommand};
-use crossterm::event::{poll, read, Event};
+use crossterm::event::{poll, read, Event, KeyEvent, KeyCode, KeyModifiers};
 
 use crate::timer::Timer;
 use crate::job::Job;
@@ -27,10 +27,22 @@ use tui::text::{Span, Spans};
 use tokio::time::Duration;
 
 struct ConsoleCLI {
+    active_listener_index: usize,
     terminal: Terminal<CrosstermBackend<std::io::Stdout>>
 }
 
+
 impl ConsoleCLI {
+
+    /// The index of different listeners
+    const SERVER_INDEX : usize = 0;
+    const TASK_INDEX : usize = 1;
+    const FOOTER_INDEX : usize = 2;
+    const OUTPUT_INDEX : usize = 3;
+
+    /// The styling options
+    const BACKGROUND_COLOR_HEX : (u8, u8, u8) = (3, 36, 45);
+    const BACKGROUND_COLOR: Color = Color::Rgb(3, 36, 45);
 
     /// Method to construct a new cli with
     /// the crossterm backend
@@ -39,114 +51,155 @@ impl ConsoleCLI {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        return Ok(ConsoleCLI {
-            terminal
-        });
-    }
-
-    /// Method to initialize and display the UI
-    fn build_ui(&mut self) {
-        // Clear the screen
-        ConsoleCLI::clear();
-
         // Change the background color to blue
-        stdout()
-            .execute(SetBackgroundColor(crossterm::style::Color::Blue));
+        io::stdout()
+            .execute(SetBackgroundColor( crossterm::style::Color::from( ConsoleCLI::BACKGROUND_COLOR_HEX ) ) );
 
-        self.terminal.draw(|f| {
-            let main_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(
-                    [
-                        Constraint::Percentage(50),
-                        Constraint::Percentage(50)
-                    ].as_ref()
-                )
-                .split(f.size());
+        let mut cli = ConsoleCLI {
+            active_listener_index: 0,
+            terminal
+        };
 
-            // Render the output terminal
-            let text = vec![
-                Spans::from(vec![
-                    Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
-                ]),
-            ];
-            let output_term = Paragraph::new(text)
-                .block(Block::default().title(" OUTPUT ").borders(Borders::ALL))
-                .style(Style::default().fg(Color::White))
-                .alignment(Alignment::Left)
-                .wrap(tui::widgets::Wrap { trim: true });
-            f.render_widget(output_term, main_chunks[1]);
-
-            let mini_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Percentage(40),
-                        Constraint::Percentage(40),
-                        Constraint::Percentage(20)
-                    ].as_ref()
-                )
-                .split(main_chunks[0]);
-
-            let tasks_panel = Block::default()
-                .title(
-                    Span::styled(" TASKS ", Style::default().fg(Color::White))
-                )
-                .borders(Borders::ALL);
-
-            // Render the task list
-            let tasks = [ListItem::new("Item 1"), ListItem::new("Item 2"), ListItem::new("Item 3")];
-            let task_list = tui::widgets::List::new(tasks)
-                .block(Block::default().title(" TASKS ").borders(Borders::ALL))
-                .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
-                .highlight_symbol(">>");
-
-            // Render the server list
-            let servers = [ListItem::new("Item 1"), ListItem::new("Item 2"), ListItem::new("Item 3")];
-            let server_list = tui::widgets::List::new(servers)
-                .block(Block::default().title(" SERVERS ").borders(Borders::ALL))
-                .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
-                .highlight_symbol(">>");
-
-            // Render the footer
-            let text = vec![
-                Spans::from(vec![
-                    Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
-                ]),
-            ];
-
-            let footer = tui::widgets::Paragraph::new(text)
-                .block(Block::default().title(" INFORMATION ").borders(Borders::ALL))
-                .style(Style::default().fg(Color::White))
-                .alignment(tui::layout::Alignment::Left)
-                .wrap(tui::widgets::Wrap { trim: true });
-
-            f.render_widget(server_list, mini_chunks[0]);
-            f.render_widget(task_list, mini_chunks[1]);
-            f.render_widget(footer, mini_chunks[2]);
-        });
-
-        // Spawn a new thread to listen and parse the events
-        thread::spawn(|| {
-            ConsoleCLI::parse_events();
-        });
+        return Ok(cli);
     }
 
-    /// Method to parse the events
-    fn parse_events() -> crossterm::Result<()> {
+    /// Method to render the UI
+    fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+
+        let mut task_listener = Listener::new(vec![
+            String::from("+ Add New Task"),
+            String::from("List out files"),
+            String::from("Create new file"),
+            String::from("Open TCP Port")
+        ]);
+
+        let mut server_listener = Listener::new(vec![
+            String::from("+ Add New Server"),
+            String::from("Server 1 - xyz"),
+            String::from("Server 2 - abc"),
+            String::from("Server 3 - def")
+        ]);
+
+
         loop {
             if poll(Duration::from_millis(500))? {
                 match read()? {
-                    Event::Key(event) => println!("{:?}", event),
+                    Event::Key(event) => {
+                        let key_code = event.code;
+                        let key_modifier = event.modifiers;
+
+                        match key_code {
+                            KeyCode::Char(' ') => {
+                                // Move to the next section
+                                self.active_listener_index = (self.active_listener_index+1)%2;
+                            },
+                            KeyCode::Up => {
+                                match self.active_listener_index {
+                                    0 => {
+                                        task_listener.unselect();
+                                        server_listener.previous();
+                                    },
+                                    1 => {
+                                        server_listener.unselect();
+                                        task_listener.previous();
+                                    },
+                                    _ => unimplemented!()
+                                }
+                            },
+                            KeyCode::Down => {
+                                match self.active_listener_index {
+                                    0 => {
+                                        task_listener.unselect();
+                                        server_listener.next();
+                                    },
+                                    1 => {
+                                        server_listener.unselect();
+                                        task_listener.next();
+                                    },
+                                    _ => unimplemented!()
+                                }
+                            }
+                            _ => println!("do nothing"),
+                        }
+                    },
                     Event::Mouse(event) => println!("{:?}", event),
                     Event::Resize(..) => println!("Resized!")
                 }
             }
+
+            self.terminal.draw(|f| {
+                // Create a copy of the listeners
+                let main_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(
+                        [
+                            Constraint::Percentage(50),
+                            Constraint::Percentage(50)
+                        ].as_ref()
+                    )
+                    .split(f.size());
+
+                // Render the output terminal
+                let text = vec![
+                    Spans::from(vec![
+                        Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
+                    ]),
+                ];
+                let output_term = Paragraph::new(text)
+                    .block(Block::default().title(" OUTPUT ").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
+                    .alignment(Alignment::Left)
+                    .wrap(tui::widgets::Wrap { trim: true });
+                f.render_widget(output_term, main_chunks[1]);
+
+                let mini_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints(
+                        [
+                            Constraint::Percentage(40),
+                            Constraint::Percentage(40),
+                            Constraint::Percentage(20)
+                        ].as_ref()
+                    )
+                    .split(main_chunks[0]);
+
+                let task_items : Vec<ListItem> = task_listener.items.iter().map(|i| ListItem::new(i.as_ref())).collect();
+                let task_list = tui::widgets::List::new(task_items)
+                    .block(Block::default().title(" TASKS ").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                    .highlight_symbol(">>");
+
+                f.render_stateful_widget(task_list, mini_chunks[1], &mut task_listener.state);
+
+                // Render the server list
+                let server_items : Vec<ListItem> = server_listener.items.iter().map(|v| ListItem::new(v.as_ref())).collect();
+                let server_list = tui::widgets::List::new(server_items)
+                    .block(Block::default().title(" SERVERS ").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
+                    .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+                    .highlight_symbol(">>");
+                f.render_stateful_widget(server_list, mini_chunks[0], &mut server_listener.state);
+
+
+                // Render the footer
+                let text = vec![
+                    Spans::from(vec![
+                        Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
+                    ]),
+                ];
+
+                let footer = tui::widgets::Paragraph::new(text)
+                    .block(Block::default().title(" INFORMATION ").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
+                    .alignment(tui::layout::Alignment::Left)
+                    .wrap(tui::widgets::Wrap { trim: true });
+
+                f.render_widget(footer, mini_chunks[2]);
+            });
         }
 
-        return Ok(());
+
     }
 
     /// Method to print some text to the Console
@@ -177,7 +230,7 @@ impl ConsoleCLI {
         ConsoleCLI::print_line("\r");
     }
 
-    fn load<T>(loading_text:  T) -> Sender<bool>
+    fn load<T>(loading_text: T) -> Sender<bool>
     where T : std::fmt::Display {
         let (tx, rx): (Sender<bool>, Receiver<bool>) = mpsc::channel();
         ConsoleCLI::print_line(&loading_text);
@@ -384,82 +437,146 @@ impl User {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Listener {
+    items: Vec<String>,
+    state: ListState
+}
+
+impl Listener {
+    fn new(items: Vec<String>) -> Self {
+        assert!(items.len() > 0);
+        let mut listener = Listener {
+            items,
+            state: ListState::default()
+        };
+
+        return listener;
+    }
+
+    pub fn set_items(&mut self, items: Vec<String>) {
+        // Reset the items and state
+        self.items = items;
+        self.state = ListState::default();
+    }
+
+    pub fn next(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.items.len()-1 {
+                    0
+                } else {
+                    i+1
+                }
+            },
+            None => 0
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn previous(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.items.len() - 1
+                } else {
+                    i - 1
+                }
+            },
+            None => 0
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn unselect(&mut self) {
+        self.state.select(None);
+    }
+}
+
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    let mut cli = ConsoleCLI::new().unwrap();
-    cli.build_ui();
+    let mut cli = Arc::new(Mutex::new(ConsoleCLI::new().unwrap()));
+    let cli_thread = thread::spawn( move || {
+        let clone = Arc::clone(&cli);
+        let mut cli = &mut *clone.lock().unwrap();
+        cli.render();
+    });
 
-    let mut user = User::new();
+    cli_thread.join().unwrap();
 
-    // Authenticate the user
-    let authenticated = user.authenticate().await?;
-    if authenticated {
-        println!("You have been logged in!");
-    } else {
-        println!("Error logging in!");
-    }
-    // Configuration for the thread pool
-    const NUM_WORKERS: usize = 5;
-    // Create the jobs
-    const NUM_JOBS: usize = 5;
-
-    // Holds the tasks entered by the user
-    let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
-    // Holds the results of the jobs
-    let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
-
-    // Receive the tasks from the user
-    for _ in 0..NUM_JOBS {
-        let mut job_task = String::new();
-        io::stdin().read_line(&mut job_task)
-            .expect("Failed to read job");
-        job_task = job_task.parse().expect("Failed to parse job!");
-        task_list.push(job_task);
-    }
-
-    // Show the loading text
-    let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
-    // Create a thread pool to run the SSH jobs in parallel
-    let pool = ThreadPool::new(NUM_WORKERS);
-
-    // Start the timer to time the duration for all the jobs
-    // to be completed
-    let timer = Timer::new();
-
-    // Execute the jobs using worker threads
-    for i in 0..NUM_JOBS {
-        // Get the task for the current job
-        let job_task= task_list[i].clone();
-        // Make a clone of the results
-        let clone = Arc::clone(&job_results);
-        pool.execute( move || {
-            // Get the vector storing the results
-            let mut result_vec = clone.lock().unwrap();
-            // Connect to the server and execute the SSH job
-            let mut server = Server::new();
-            block_on(server.connect()).unwrap();
-
-            // Create the new job for the worker thread
-            // and execute the job
-            let job = Job::new(job_task);
-            let res = block_on(server.execute(&job)).unwrap();
-            result_vec.push(String::from(res));
-        });
-    }
-
-    // Make a blocking call to wait for all the jobs to be
-    // completed
-    pool.join();
-
-    // Terminate the loading screen thread
-    let _ = tx.send(true);
-    ConsoleCLI::delete_prev_line();
-    ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
-    drop(timer);
-
-    // Display the results in the table
-    ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
-    drop(job_results);
+    // let mut user = User::new();
+    //
+    // // Authenticate the user
+    // let authenticated = user.authenticate().await?;
+    // if authenticated {
+    //     println!("You have been logged in!");
+    // } else {
+    //     println!("Error logging in!");
+    // }
+    // // Configuration for the thread pool
+    // const NUM_WORKERS: usize = 5;
+    // // Create the jobs
+    // const NUM_JOBS: usize = 5;
+    //
+    // // Holds the tasks entered by the user
+    // let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
+    // // Holds the results of the jobs
+    // let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
+    //
+    // // Receive the tasks from the user
+    // for _ in 0..NUM_JOBS {
+    //     let mut job_task = String::new();
+    //     io::stdin().read_line(&mut job_task)
+    //         .expect("Failed to read job");
+    //     job_task = job_task.parse().expect("Failed to parse job!");
+    //     task_list.push(job_task);
+    // }
+    //
+    // // Show the loading text
+    // let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
+    // // Create a thread pool to run the SSH jobs in parallel
+    // let pool = ThreadPool::new(NUM_WORKERS);
+    //
+    // // Start the timer to time the duration for all the jobs
+    // // to be completed
+    // let timer = Timer::new();
+    //
+    // // Execute the jobs using worker threads
+    // for i in 0..NUM_JOBS {
+    //     // Get the task for the current job
+    //     let job_task= task_list[i].clone();
+    //     // Make a clone of the results
+    //     let clone = Arc::clone(&job_results);
+    //     pool.execute( move || {
+    //         // Get the vector storing the results
+    //         let mut result_vec = clone.lock().unwrap();
+    //         // Connect to the server and execute the SSH job
+    //         let mut server = Server::new();
+    //         block_on(server.connect()).unwrap();
+    //
+    //         // Create the new job for the worker thread
+    //         // and execute the job
+    //         let job = Job::new(job_task);
+    //         let res = block_on(server.execute(&job)).unwrap();
+    //         result_vec.push(String::from(res));
+    //     });
+    // }
+    //
+    // // Make a blocking call to wait for all the jobs to be
+    // // completed
+    // pool.join();
+    //
+    // // Terminate the loading screen thread
+    // let _ = tx.send(true);
+    // ConsoleCLI::delete_prev_line();
+    // ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
+    // drop(timer);
+    //
+    // // Display the results in the table
+    // ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
+    // drop(job_results);
     return Ok(());
 }
