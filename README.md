@@ -1,5 +1,7 @@
 # Basecamp
 
+![alt github link](http://url/to/img.png)
+
 An CLI application made using rust to run shell commands on a remote server directly!
 
 
