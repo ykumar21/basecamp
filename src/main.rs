@@ -28,7 +28,13 @@ use tokio::time::Duration;
 
 struct ConsoleCLI {
     active_listener_index: usize,
-    terminal: Terminal<CrosstermBackend<std::io::Stdout>>
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    task_listener: Arc<Mutex<Listener<String>>>,
+    server_listener: Arc<Mutex<Listener<String>>>,
+    selected_servers: Vec<String>,
+    selected_jobs: Vec<String>,
+    console_text: String,
+    render: bool
 }
 
 
@@ -55,34 +61,83 @@ impl ConsoleCLI {
         io::stdout()
             .execute(SetBackgroundColor( crossterm::style::Color::from( ConsoleCLI::BACKGROUND_COLOR_HEX ) ) );
 
-        let mut cli = ConsoleCLI {
-            active_listener_index: 0,
-            terminal
-        };
-
-        return Ok(cli);
-    }
-
-    /// Method to render the UI
-    fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
 
         let mut task_listener = Listener::new(vec![
-            String::from("+ Add New Task"),
-            String::from("List out files"),
-            String::from("Create new file"),
-            String::from("Open TCP Port")
+            String::from("touch hey.txt"),
+            String::from("ls"),
+            String::from("ls")
         ]);
 
+
         let mut server_listener = Listener::new(vec![
-            String::from("+ Add New Server"),
             String::from("Server 1 - xyz"),
             String::from("Server 2 - abc"),
             String::from("Server 3 - def")
         ]);
 
+        return Ok(ConsoleCLI {
+            terminal,
+            active_listener_index: 0,
+            task_listener: Arc::new(Mutex::new(task_listener)),
+            server_listener: Arc::new(Mutex::new(server_listener)),
+            selected_jobs: Vec::new(),
+            selected_servers: Vec::new(),
+            console_text: String::new(),
+            render: true
+        });
+    }
 
+    /// Method to clear the output to the
+    /// terminal
+    ///
+    /// # Examples:
+    /// ```no_run
+    /// let mut cli = ConsoleCLI::new();
+    /// cli.print("Hey!");
+    /// cli.clear();
+    /// ```
+    fn clear(&mut self) {
+        self.console_text = String::new();
+    }
+
+    /// Method to print text to the terminal
+    /// console
+    ///
+    /// # Examples:
+    /// ```no_run
+    ///  let mut cli = ConsoleCLI::new();
+    ///  cli.print("Hey!");
+    /// ```
+    fn print(&mut self, mut text: String) {
+        text.push_str("\n");
+        self.console_text.push_str(&*text);
+    }
+
+    /// Method to render the UI
+    fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
-            if poll(Duration::from_millis(500))? {
+
+            // Stop rendering the cli
+            if self.render == false {
+                break Ok(());
+            }
+
+            let task_listener_clone = Arc::clone(&self.task_listener);
+            let mut task_listener = &mut *(task_listener_clone).lock().unwrap();
+
+            let server_listener_clone = Arc::clone(&self.server_listener);
+            let mut server_listener = &mut *(server_listener_clone).lock().unwrap();
+
+            // Get a mutable reference to the current active listener
+            let mut active_listener= match self.active_listener_index {
+                0 => &mut server_listener,
+                1 => &mut task_listener,
+                _ => unimplemented!()
+            };
+
+            let terminal_text = self.console_text.clone();
+
+            if poll(Duration::from_millis(200))? {
                 match read()? {
                     Event::Key(event) => {
                         let key_code = event.code;
@@ -90,42 +145,61 @@ impl ConsoleCLI {
 
                         match key_code {
                             KeyCode::Char(' ') => {
-                                // Move to the next section
-                                self.active_listener_index = (self.active_listener_index+1)%2;
+                                // Move to the next sectionx
+                                self.print(
+                                    format!(
+                                        "Executing {} jobs on {} servers!",
+                                        self.selected_jobs.len(),
+                                        self.selected_servers.len()
+                                    )
+                                );
+                                // Stop rendering the ui and
+                                // clear the terminal
+                                self.render = false;
+                                ConsoleCLI::clear_screen();
+
                             },
+
+                            KeyCode::Tab => {
+                                self.active_listener_index = (self.active_listener_index+1)%2;
+                            }
                             KeyCode::Up => {
-                                match self.active_listener_index {
-                                    0 => {
-                                        task_listener.unselect();
-                                        server_listener.previous();
-                                    },
-                                    1 => {
-                                        server_listener.unselect();
-                                        task_listener.previous();
-                                    },
-                                    _ => unimplemented!()
-                                }
+                                active_listener.previous();
                             },
                             KeyCode::Down => {
+                                active_listener.next();
+                            },
+                            KeyCode::Enter => {
+                                let selected_item = match active_listener.get_selected() {
+                                    Some(item) => item,
+                                    None => {  panic!("Could not fetch element"); }
+                                };
+
                                 match self.active_listener_index {
                                     0 => {
-                                        task_listener.unselect();
-                                        server_listener.next();
+                                        self.print(format!("Selected server: {}", selected_item));
+                                        self.selected_servers.push(selected_item.to_string());
                                     },
                                     1 => {
-                                        server_listener.unselect();
-                                        task_listener.next();
+                                        self.print(format!("Selected job: {}", selected_item));
+                                        self.selected_jobs.push(selected_item.to_string());
                                     },
-                                    _ => unimplemented!()
-                                }
+                                    _ => panic!("Ye kaise hogaya?")
+                                };
+
                             }
                             _ => println!("do nothing"),
                         }
                     },
-                    Event::Mouse(event) => println!("{:?}", event),
-                    Event::Resize(..) => println!("Resized!")
+                    Event::Mouse(event) => {
+                        println!("{:?}", event)
+                    },
+                    Event::Resize(..) => {
+                        println!("Resized!")
+                    }
                 }
             }
+
 
             self.terminal.draw(|f| {
                 // Create a copy of the listeners
@@ -140,16 +214,15 @@ impl ConsoleCLI {
                     .split(f.size());
 
                 // Render the output terminal
-                let text = vec![
-                    Spans::from(vec![
-                        Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
-                    ]),
-                ];
+                let text = tui::text::Text::from(terminal_text);
+
                 let output_term = Paragraph::new(text)
                     .block(Block::default().title(" OUTPUT ").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
                     .alignment(Alignment::Left)
-                    .wrap(tui::widgets::Wrap { trim: true });
+                    .wrap(tui::widgets::Wrap { trim: true })
+                    .scroll((0,1));
+
                 f.render_widget(output_term, main_chunks[1]);
 
                 let mini_chunks = Layout::default()
@@ -218,12 +291,90 @@ impl ConsoleCLI {
 
     /// Method to clear the terminal and places
     /// the cursor at the top-left of the terminal
-    fn clear() {
+    fn clear_screen() {
         print!("\x1B[2J\x1B[1;1H");
     }
 
     fn print_new_line() {
         println!();
+    }
+
+    /// Method to execute the selected jobs on the
+    /// selected servers asynchrouslly
+    pub async fn execute_jobs(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+
+        let mut user = User::new();
+        // Authenticate the user
+        let authenticated = user.authenticate().await?;
+        if authenticated {
+            println!("You have been logged in!");
+        } else {
+            println!("Error logging in!");
+        }
+        // Configuration for the thread pool
+        const NUM_WORKERS: usize = 5;
+
+        // Create the jobs
+        let NUM_JOBS: usize = self.selected_jobs.len();
+
+        // Holds the results of the jobs
+        let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
+
+        // Receive the tasks from the user
+        // for _ in 0..NUM_JOBS {
+        //     let mut job_task = String::new();
+        //     io::stdin().read_line(&mut job_task)
+        //         .expect("Failed to read job");
+        //     job_task = job_task.parse().expect("Failed to parse job!");
+        //     task_list.push(job_task);
+        // }
+
+        // Show the loading text
+        let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
+
+        // Create a thread pool to run the SSH jobs in parallel
+        let pool = ThreadPool::new(NUM_WORKERS);
+
+        // Start the timer to time the duration for all the jobs
+        // to be completed
+        let timer = Timer::new();
+
+        // Execute the jobs using worker threads
+        for i in 0..NUM_JOBS {
+            // Get the task for the current job
+            let job_task = self.selected_jobs[i].clone();
+            // Make a clone of the results
+            let clone = Arc::clone(&job_results);
+            pool.execute( move || {
+                // Get the vector storing the results
+                let mut result_vec = clone.lock().unwrap();
+                // Connect to the server and execute the SSH job
+                let mut server = Server::new();
+                block_on(server.connect()).unwrap();
+
+                // Create the new job for the worker thread
+                // and execute the job
+                let job = Job::new(job_task);
+                let res = block_on(server.execute(&job)).unwrap();
+                result_vec.push(String::from(res));
+            });
+        }
+
+        // Make a blocking call to wait for all the jobs to be
+        // completed
+        pool.join();
+
+        // Terminate the loading screen thread
+        let _ = tx.send(true);
+        ConsoleCLI::delete_prev_line();
+        ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
+        drop(timer);
+
+        // Display the results in the table
+        ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
+        drop(job_results);
+
+        return Ok(());
     }
 
     fn delete_prev_line() {
@@ -257,6 +408,7 @@ impl ConsoleCLI {
         });
         return tx;
     }
+
 
     fn display_table<T>(data: &Vec<T>)
     where T : std::fmt::Display {
@@ -438,13 +590,17 @@ impl User {
 }
 
 #[derive(Clone, Debug)]
-struct Listener {
-    items: Vec<String>,
+struct Listener<T> {
+    items: Vec<T>,
     state: ListState
 }
 
-impl Listener {
-    fn new(items: Vec<String>) -> Self {
+impl<T> Listener<T>
+where
+    T : std::fmt::Display
+{
+
+    fn new(items: Vec<T>) -> Self {
         assert!(items.len() > 0);
         let mut listener = Listener {
             items,
@@ -454,10 +610,18 @@ impl Listener {
         return listener;
     }
 
-    pub fn set_items(&mut self, items: Vec<String>) {
+    pub fn set_items(&mut self, items: Vec<T>) {
         // Reset the items and state
         self.items = items;
         self.state = ListState::default();
+    }
+
+    pub fn get_selected(&self) -> Option<&T> {
+        let elem = match self.state.selected() {
+            Some(i) => Some(&self.items[i]),
+            None => None
+        };
+        return elem;
     }
 
     pub fn next(&mut self) {
@@ -491,91 +655,28 @@ impl Listener {
     pub fn unselect(&mut self) {
         self.state.select(None);
     }
-}
 
+    pub fn get_item(&self, index: usize) -> &T {
+        assert!(index < self.items.len());
+        return &self.items[index];
+    }
+}
 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cli = Arc::new(Mutex::new(ConsoleCLI::new().unwrap()));
-    let cli_thread = thread::spawn( move || {
-        let clone = Arc::clone(&cli);
-        let mut cli = &mut *clone.lock().unwrap();
-        cli.render();
+    let mut clone = Arc::clone(&cli);
+    let render_handle = thread::spawn(move || {
+        let mut cli_clone = &mut *(clone).lock().unwrap();
+        cli_clone.render();
     });
 
-    cli_thread.join().unwrap();
+    render_handle.join().unwrap();
 
-    let mut user = User::new();
-    // Authenticate the user
-    let authenticated = user.authenticate().await?;
-    if authenticated {
-        println!("You have been logged in!");
-    } else {
-        println!("Error logging in!");
-    }
-    // Configuration for the thread pool
-    const NUM_WORKERS: usize = 5;
-    // Create the jobs
-    const NUM_JOBS: usize = 5;
+    // Execute the jobs
+    (*Arc::clone(&cli)).lock().unwrap().execute_jobs().await?;
 
-    // Holds the tasks entered by the user
-    let mut task_list: Vec<String> = Vec::with_capacity(NUM_JOBS);
-    // Holds the results of the jobs
-    let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
-
-    // Receive the tasks from the user
-    for _ in 0..NUM_JOBS {
-        let mut job_task = String::new();
-        io::stdin().read_line(&mut job_task)
-            .expect("Failed to read job");
-        job_task = job_task.parse().expect("Failed to parse job!");
-        task_list.push(job_task);
-    }
-
-    // Show the loading text
-    let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
-    // Create a thread pool to run the SSH jobs in parallel
-    let pool = ThreadPool::new(NUM_WORKERS);
-
-    // Start the timer to time the duration for all the jobs
-    // to be completed
-    let timer = Timer::new();
-
-    // Execute the jobs using worker threads
-    for i in 0..NUM_JOBS {
-        // Get the task for the current job
-        let job_task= task_list[i].clone();
-        // Make a clone of the results
-        let clone = Arc::clone(&job_results);
-        pool.execute( move || {
-            // Get the vector storing the results
-            let mut result_vec = clone.lock().unwrap();
-            // Connect to the server and execute the SSH job
-            let mut server = Server::new();
-            block_on(server.connect()).unwrap();
-
-            // Create the new job for the worker thread
-            // and execute the job
-            let job = Job::new(job_task);
-            let res = block_on(server.execute(&job)).unwrap();
-            result_vec.push(String::from(res));
-        });
-    }
-
-    // Make a blocking call to wait for all the jobs to be
-    // completed
-    pool.join();
-
-    // Terminate the loading screen thread
-    let _ = tx.send(true);
-    ConsoleCLI::delete_prev_line();
-    ConsoleCLI::print_line(format!("Finished Jobs in {}s\n", timer.ellapsed().as_secs()));
-    drop(timer);
-
-    // Display the results in the table
-    ConsoleCLI::display_table(&*Arc::clone(&job_results).lock().unwrap());
-    drop(job_results);
     return Ok(());
 }
