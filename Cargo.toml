@@ -1,5 +1,5 @@
 [package]
-name = "Mongodb"
+name = "basecamp"
 version = "0.1.0"
 authors = ["Tandoori Momos <yash20008@gmail.com>"]
 edition = "2018"
