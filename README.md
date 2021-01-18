@@ -4,6 +4,8 @@
 
 An CLI application made using rust to run shell commands on a remote server directly!
 
+## Sample
+
 ![Sample](https://media2.giphy.com/media/V9dEDWtn5ElZqR7QdM/giphy.gif)
 
 ## Contributing
