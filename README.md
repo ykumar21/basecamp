@@ -1,6 +1,6 @@
 # Basecamp
 
-![alt github link](https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=for-the-badge&logo=github&link=https://github.com/YashWardhann/basecamp)
+![alt github link](https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=for-the-badge&logo=github&link=https://github.com/YashWardhann/basecamp&logoWidth=40)
 
 An CLI application made using rust to run shell commands on a remote server directly!
 
