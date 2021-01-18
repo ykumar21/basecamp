@@ -1,9 +1,10 @@
-#![allow(warnings)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 mod timer;
 mod job;
 
 use std::sync::{Arc,Mutex};
-use std::io::{self, Write, stdout};
+use std::io::{self, Write};
 use std::collections::HashMap;
 use std::thread;
 use std::sync::mpsc::{self, TryRecvError, Sender, Receiver};
@@ -15,11 +16,11 @@ use threadpool::ThreadPool;
 use cli_table::{format::Justify, print_stdout, Style as TableStyle, Cell, Table, CellStruct};
 use tui::Terminal;
 use tui::backend::CrosstermBackend;
-use tui::widgets::{Widget, Block, Borders, ListItem, Wrap, Paragraph, ListState};
+use tui::widgets::{Block, Borders, ListItem, Paragraph, ListState};
 use tui::layout::{Layout, Constraint, Direction, Alignment};
-use tui::style::{Style, Color, Modifier};
-use crossterm::{execute, style::{SetBackgroundColor}, ExecutableCommand};
-use crossterm::event::{poll, read, Event, KeyEvent, KeyCode, KeyModifiers};
+use tui::style::{Style, Color};
+use crossterm::{style::{SetBackgroundColor}, ExecutableCommand};
+use crossterm::event::{poll, read, Event, KeyCode};
 
 use crate::timer::Timer;
 use crate::job::Job;
@@ -47,32 +48,32 @@ impl ConsoleCLI {
     const OUTPUT_INDEX : usize = 3;
 
     /// The styling options
-    const BACKGROUND_COLOR_HEX : (u8, u8, u8) = (3, 36, 45);
-    const BACKGROUND_COLOR: Color = Color::Rgb(3, 36, 45);
+    const BACKGROUND_COLOR_HEX : (u8, u8, u8) = (42, 3, 33);
+    const BACKGROUND_COLOR: Color = Color::Rgb(42, 3, 33);
 
     /// Method to construct a new cli with
     /// the crossterm backend
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let terminal = Terminal::new(backend)?;
 
-        // Change the background color to blue
+        // Change the background color
         io::stdout()
-            .execute(SetBackgroundColor( crossterm::style::Color::from( ConsoleCLI::BACKGROUND_COLOR_HEX ) ) );
+            .execute(SetBackgroundColor( crossterm::style::Color::from( ConsoleCLI::BACKGROUND_COLOR_HEX ) ) ).unwrap();
 
 
-        let mut task_listener = Listener::new(vec![
+        let task_listener = Listener::new(vec![
             String::from("touch hey.txt"),
             String::from("ls"),
             String::from("ls")
         ]);
 
 
-        let mut server_listener = Listener::new(vec![
-            String::from("Server 1 - xyz"),
-            String::from("Server 2 - abc"),
-            String::from("Server 3 - def")
+        let server_listener = Listener::new(vec![
+            String::from("DELMAIN01"),
+            String::from("DELBACKUP01"),
+            String::from("HRMAIN01")
         ]);
 
         return Ok(ConsoleCLI {
@@ -116,7 +117,6 @@ impl ConsoleCLI {
     /// Method to render the UI
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
-
             // Stop rendering the cli
             if self.render == false {
                 break Ok(());
@@ -129,7 +129,7 @@ impl ConsoleCLI {
             let mut server_listener = &mut *(server_listener_clone).lock().unwrap();
 
             // Get a mutable reference to the current active listener
-            let mut active_listener= match self.active_listener_index {
+            let active_listener= match self.active_listener_index {
                 0 => &mut server_listener,
                 1 => &mut task_listener,
                 _ => unimplemented!()
@@ -141,27 +141,43 @@ impl ConsoleCLI {
                 match read()? {
                     Event::Key(event) => {
                         let key_code = event.code;
-                        let key_modifier = event.modifiers;
 
                         match key_code {
                             KeyCode::Char(' ') => {
-                                // Move to the next sectionx
-                                self.print(
-                                    format!(
-                                        "Executing {} jobs on {} servers!",
-                                        self.selected_jobs.len(),
-                                        self.selected_servers.len()
-                                    )
-                                );
-                                // Stop rendering the ui and
-                                // clear the terminal
-                                self.render = false;
-                                ConsoleCLI::clear_screen();
 
+                                if self.selected_servers.len() == 0 {
+                                    self.print(
+                                        format!(
+                                            "Please select atleast 1 server! Selected {}",
+                                            self.selected_servers.len()
+                                        )
+                                    );
+                                } else if self.selected_jobs.len() == 0 {
+                                    self.print(
+                                        format!(
+                                            "Please select atleast 1 server! Selected {}",
+                                            self.selected_servers.len()
+                                        )
+                                    );
+                                } else {
+                                    self.print(
+                                        format!(
+                                            "Executing {} jobs on {} servers!",
+                                            self.selected_jobs.len(),
+                                            self.selected_servers.len()
+                                        )
+                                    );
+                                    // Stop rendering the ui and
+                                    // clear the terminal
+                                    self.render = false;
+                                    ConsoleCLI::clear_screen();
+                                }
                             },
 
                             KeyCode::Tab => {
+                                active_listener.unselect();
                                 self.active_listener_index = (self.active_listener_index+1)%2;
+
                             }
                             KeyCode::Up => {
                                 active_listener.previous();
@@ -240,8 +256,11 @@ impl ConsoleCLI {
                 let task_list = tui::widgets::List::new(task_items)
                     .block(Block::default().title(" TASKS ").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
-                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                    .highlight_symbol(">>");
+                    .highlight_style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                    )
+                    .highlight_symbol(">> ");
 
                 f.render_stateful_widget(task_list, mini_chunks[1], &mut task_listener.state);
 
@@ -250,15 +269,18 @@ impl ConsoleCLI {
                 let server_list = tui::widgets::List::new(server_items)
                     .block(Block::default().title(" SERVERS ").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
-                    .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
-                    .highlight_symbol(">>");
+                    .highlight_style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                    )
+                    .highlight_symbol(">> ");
                 f.render_stateful_widget(server_list, mini_chunks[0], &mut server_listener.state);
 
 
                 // Render the footer
                 let text = vec![
                     Spans::from(vec![
-                        Span::raw("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum feugiat dui eu nunc finibus, eget iaculis lorem malesuada. Mauris ipsum dui, rutrum nec purus quis, rhoncus eleifend sapien"),
+                        Span::raw("Basecamp is an application which allows you to execute shell jobs on multiple servers directly from your local machine. Update the server.yaml file to configure the servers and job.yaml file to configure the jobs!"),
                     ]),
                 ];
 
@@ -269,7 +291,7 @@ impl ConsoleCLI {
                     .wrap(tui::widgets::Wrap { trim: true });
 
                 f.render_widget(footer, mini_chunks[2]);
-            });
+            }).unwrap();
         }
 
 
@@ -304,21 +326,22 @@ impl ConsoleCLI {
     pub async fn execute_jobs(&mut self) -> Result<(), Box<dyn std::error::Error>> {
 
         let mut user = User::new();
+
         // Authenticate the user
         let authenticated = user.authenticate().await?;
         if authenticated {
             println!("You have been logged in!");
         } else {
-            println!("Error logging in!");
+            println!("User not found (Running on TEST user)");
         }
         // Configuration for the thread pool
         const NUM_WORKERS: usize = 5;
 
         // Create the jobs
-        let NUM_JOBS: usize = self.selected_jobs.len();
+        let num_jobs: usize = self.selected_jobs.len();
 
         // Holds the results of the jobs
-        let job_results = Arc::new(Mutex::new( Vec::with_capacity(NUM_JOBS) ) );
+        let job_results = Arc::new(Mutex::new( Vec::with_capacity(num_jobs) ) );
 
         // Receive the tasks from the user
         // for _ in 0..NUM_JOBS {
@@ -330,7 +353,7 @@ impl ConsoleCLI {
         // }
 
         // Show the loading text
-        let tx = ConsoleCLI::load(format!("Executing {} jobs", NUM_JOBS));
+        let tx = ConsoleCLI::load(format!("Executing {} jobs", num_jobs));
 
         // Create a thread pool to run the SSH jobs in parallel
         let pool = ThreadPool::new(NUM_WORKERS);
@@ -340,7 +363,7 @@ impl ConsoleCLI {
         let timer = Timer::new();
 
         // Execute the jobs using worker threads
-        for i in 0..NUM_JOBS {
+        for i in 0..num_jobs {
             // Get the task for the current job
             let job_task = self.selected_jobs[i].clone();
             // Make a clone of the results
@@ -419,14 +442,14 @@ impl ConsoleCLI {
             table.push(row);
         }
 
-        let tableStruct = table.table()
+        let table_struct = table.table()
             .title(vec![
                 "Job #".cell().bold(true),
                 "Result".cell().bold(true)
             ])
             .bold(true);
 
-        print_stdout(tableStruct);
+        print_stdout(table_struct).unwrap();
     }
 }
 
@@ -602,7 +625,7 @@ where
 
     fn new(items: Vec<T>) -> Self {
         assert!(items.len() > 0);
-        let mut listener = Listener {
+        let listener = Listener {
             items,
             state: ListState::default()
         };
@@ -666,11 +689,12 @@ where
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    let mut cli = Arc::new(Mutex::new(ConsoleCLI::new().unwrap()));
-    let mut clone = Arc::clone(&cli);
+    let cli = Arc::new(Mutex::new(ConsoleCLI::new().unwrap()));
+    let clone = Arc::clone(&cli);
+
     let render_handle = thread::spawn(move || {
-        let mut cli_clone = &mut *(clone).lock().unwrap();
-        cli_clone.render();
+        let cli_clone = &mut *(clone).lock().unwrap();
+        cli_clone.render().unwrap();
     });
 
     render_handle.join().unwrap();
