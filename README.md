@@ -15,6 +15,7 @@ A CLI application made using rust to run shell commands on a remote server direc
 <p align="center">
   <img src="https://media2.giphy.com/media/V9dEDWtn5ElZqR7QdM/giphy.gif" alt="Sample video">
 </p>
+
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
