@@ -8,15 +8,6 @@
   Run shell commands on a remote server from your local machine!
 </p>  
 
-<p align="center">
-  <img src="https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=flat&logo=github&link=https://github.com/YashWardhann/basecamp">
-</p>  
-
-
-
-
-
-
 ## Sample
 
 <p align="center">
