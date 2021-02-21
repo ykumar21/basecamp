@@ -5,8 +5,14 @@
 </p>
 
 <p align="center">
-  A CLI application made using rust to run shell commands on a remote server directly!
+  Run shell commands on a remote server from your local machine!
 </p>  
+
+<p align="center">
+  <img src="https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=for-the-badge&logo=github&link=https://github.com/YashWardhann/basecamp&logoWidth=25">
+</p>  
+
+
 
 
 
