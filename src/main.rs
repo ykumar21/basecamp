@@ -63,18 +63,33 @@ impl ConsoleCLI {
             .execute(SetBackgroundColor( crossterm::style::Color::from( ConsoleCLI::BACKGROUND_COLOR_HEX ) ) ).unwrap();
 
 
-        let task_listener = Listener::new(vec![
-            String::from("touch hey.txt"),
-            String::from("ls"),
-            String::from("ls")
-        ]);
+        let task_listener = Listener::new(
+            vec![
+                String::from("ping"),
+                String::from("hostname -I"),
+                String::from("ls")
+            ],
+            vec![
+                String::from("Check connectivity"),
+                String::from("Get server IP address"),
+                String::from("List files in current directory")
+            ]
+
+        );
 
 
-        let server_listener = Listener::new(vec![
-            String::from("DELMAIN01"),
-            String::from("DELBACKUP01"),
-            String::from("HRMAIN01")
-        ]);
+        let server_listener = Listener::new(
+            vec![
+                String::from("DELMAIN01"),
+                String::from("DELBACKUP01"),
+                String::from("HRMAIN01")
+            ],
+            vec![
+                String::from("PATH/TO/PEM"),
+                String::from("PATH/TO/PEM"),
+                String::from("PATH/TO/PEM")
+            ]
+        );
 
         return Ok(ConsoleCLI {
             terminal,
@@ -155,8 +170,8 @@ impl ConsoleCLI {
                                 } else if self.selected_jobs.len() == 0 {
                                     self.print(
                                         format!(
-                                            "Please select atleast 1 server! Selected {}",
-                                            self.selected_servers.len()
+                                            "Please select atleast 1 job! Selected {}",
+                                            self.selected_jobs.len()
                                         )
                                     );
                                 } else {
@@ -252,7 +267,8 @@ impl ConsoleCLI {
                     )
                     .split(main_chunks[0]);
 
-                let task_items : Vec<ListItem> = task_listener.items.iter().map(|i| ListItem::new(i.as_ref())).collect();
+                let items = task_listener.get_items_with_meta();
+                let task_items : Vec<ListItem> = items.iter().map(|i| ListItem::new(i.as_ref())).collect();
                 let task_list = tui::widgets::List::new(task_items)
                     .block(Block::default().title(" TASKS ").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White).bg(ConsoleCLI::BACKGROUND_COLOR))
@@ -615,6 +631,7 @@ impl User {
 #[derive(Clone, Debug)]
 struct Listener<T> {
     items: Vec<T>,
+    meta: Vec<T>,
     state: ListState
 }
 
@@ -623,10 +640,11 @@ where
     T : std::fmt::Display
 {
 
-    fn new(items: Vec<T>) -> Self {
+    fn new(items: Vec<T>, meta: Vec<T>) -> Self {
         assert!(items.len() > 0);
         let listener = Listener {
             items,
+            meta,
             state: ListState::default()
         };
 
@@ -682,6 +700,22 @@ where
     pub fn get_item(&self, index: usize) -> &T {
         assert!(index < self.items.len());
         return &self.items[index];
+    }
+
+    pub fn get_items_with_meta(&self) -> Vec<String> {
+        let mut items : Vec<String> = Vec::with_capacity(self.items.len());
+
+        for i in 0..self.items.len() {
+            items.push(
+                format!(
+                    "{} - {}",
+                    self.items[i],
+                    self.meta[i]
+                )
+            );
+        }
+
+        return items;
     }
 }
 
