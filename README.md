@@ -3,9 +3,10 @@
     <img alt="babel" src="https://raw.githubusercontent.com/YashWardhann/basecamp/master/assets/logo.png" width="120">
   </a>
   
-  <h2>A CLI application made using rust to run shell commands on a remote server directly!</h2>
-  
   <img src="https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=for-the-badge&logo=github&link=https://github.com/YashWardhann/basecamp&logoWidth=25">
+  
+  A CLI application made using rust to run shell commands on a remote server directly!
+  
 </p>
 
 
