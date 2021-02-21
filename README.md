@@ -12,7 +12,7 @@
 
 Basecamp allows you to run shell jobs on multiple remote servers directly from your local system 
 
-<p align="center">
+<p>
   <img src="https://media2.giphy.com/media/V9dEDWtn5ElZqR7QdM/giphy.gif" alt="Sample video">
 </p>
 
