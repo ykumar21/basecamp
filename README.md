@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  :star2:	Run shell commands on multiple remote server from your local machine :star2:	
+  :star2:	Basecamp allows you to run shell jobs on multiple remote servers directly from your local system :star2:	
 </p>  
 
 ## Sample
