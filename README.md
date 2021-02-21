@@ -4,6 +4,7 @@
   </a>
 </p>
 
+<p align="center">
 # Basecamp
 
 ![alt github link](https://img.shields.io/badge/GITHUB-YashWardhann%2Fbasecamp-blue?style=for-the-badge&logo=github&link=https://github.com/YashWardhann/basecamp&logoWidth=25)
@@ -24,3 +25,4 @@ Please make sure to update tests as appropriate.
 
 
 ### Created with :heart: by [Yashwardhann Kumar](https://www.facebook.com/yashwardhann.100)
+</p>
