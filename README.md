@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://babeljs.io/">
-    <img alt="babel" src="https://raw.githubusercontent.com/YashWardhann/basecamp/master/assets/logo.png" width="380">
+    <img alt="babel" src="https://raw.githubusercontent.com/YashWardhann/basecamp/master/assets/logo.png">
   </a>
 </p>
 
