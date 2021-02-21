@@ -8,7 +8,9 @@
   Run shell jobs on multiple remote servers directly from your local system :dart:		
 </p>  
 
-## Sample
+## Intro
+
+Basecamp allows you to run shell jobs on multiple remote servers directly from your local system 
 
 <p align="center">
   <img src="https://media2.giphy.com/media/V9dEDWtn5ElZqR7QdM/giphy.gif" alt="Sample video">
