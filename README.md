@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Run shell commands on multiple remote server from your local machine :star2:	
+  :star2:	Run shell commands on multiple remote server from your local machine :star2:	
 </p>  
 
 ## Sample
