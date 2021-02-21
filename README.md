@@ -19,8 +19,6 @@ Basecamp allows you to run shell jobs on multiple remote servers directly from y
 
 ## Setup
 
-Basecamp is supported on Windows, Linux and Mac systems. 
-
 ### On Windows
 Upcoming
 
