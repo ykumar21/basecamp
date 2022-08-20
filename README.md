@@ -17,16 +17,6 @@ Basecamp allows you to run shell jobs on multiple remote servers directly from y
   <img src="https://media2.giphy.com/media/V9dEDWtn5ElZqR7QdM/giphy.gif" alt="Sample video">
 </p>
 
-## Setup
-
-### On Windows
-Upcoming
-
-### On Linux
-Upcoming
-
-### On Mac
-Upcoming
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
